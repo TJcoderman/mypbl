@@ -433,9 +433,149 @@ function analyzeComplexity(code, language) {
     explanation = "Binary search algorithm detected.";
   }
   
+  const algorithmPatterns = {
+    quickSort: /(?:quick_?sort|partition)/i,
+    mergeSort: /merge_?sort/i,
+    binarySearch: /binary_?search/i,
+    bubbleSort: /bubble_?sort/i,
+    insertionSort: /insertion_?sort/i,
+    dfs: /(?:depth_?first|dfs)/i,
+    bfs: /(?:breadth_?first|bfs)/i,
+    dijkstra: /dijkstra/i,
+    fibonacci: /fibonacci|fib\(/i
+  };
+
+  // Process each line for complexity
+  lines.forEach((line, index) => {
+    const trimmedLine = line.trim();
+    
+    // Check for loop starts
+    if ((/\b(for|while)\b/.test(trimmedLine) && trimmedLine.includes('(')) || 
+        (language === 'python' && /\bfor\b.*\bin\b/.test(trimmedLine))) {
+        
+        // Get indentation level for Python
+        let currentNesting = 0;
+        if (language === 'python') {
+            const spaces = line.match(/^\s*/)[0].length;
+            currentNesting = Math.floor(spaces / 4);
+        } else {
+            currentNesting = nestingStack.length;
+        }
+        
+        nestingStack.push({
+            type: 'loop',
+            nesting: currentNesting
+        });
+        
+        maxNesting = Math.max(maxNesting, nestingStack.length);
+    }
+    
+    // Track brace/block endings
+    if ((language === 'cpp' || language === 'java' || language === 'javascript') && 
+        trimmedLine.includes('}')) {
+        if (nestingStack.length > 0) nestingStack.pop();
+    }
+    
+    // Check for recursive function calls
+    if (trimmedLine.match(/\b(\w+)\s*\(.*\)/)) {
+        const funcName = RegExp.$1;
+        if (cleanCode.match(new RegExp(`\\b${funcName}\\s*\\([^)]*\\)`, 'g')).length > 1) {
+            nestingStack.push({ type: 'recursion' });
+        }
+    }
+  });
+
+  // Determine complexity based on nesting and patterns
+  let baseComplexity = '';
+  let additionalInfo = [];
+
+  // Check for specific algorithms first
+  for (const [algo, pattern] of Object.entries(algorithmPatterns)) {
+    if (pattern.test(cleanCode)) {
+        switch (algo) {
+            case 'quickSort':
+                return {
+                    complexity: 'O(n log n) average, O(n²) worst case',
+                    explanation: 'QuickSort algorithm detected - Average case is O(n log n), worst case is O(n²)'
+                };
+            case 'mergeSort':
+                return {
+                    complexity: 'O(n log n)',
+                    explanation: 'MergeSort algorithm detected - Consistent O(n log n) complexity'
+                };
+            case 'binarySearch':
+                return {
+                    complexity: 'O(log n)',
+                    explanation: 'Binary Search algorithm detected - Logarithmic time complexity'
+                };
+            case 'bubbleSort':
+            case 'insertionSort':
+                return {
+                    complexity: 'O(n²)',
+                    explanation: `${algo.replace(/([A-Z])/g, ' $1').trim()} algorithm detected - Quadratic time complexity`
+                };
+            case 'dfs':
+            case 'bfs':
+                return {
+                    complexity: 'O(V + E)',
+                    explanation: `${algo.toUpperCase()} graph traversal detected - Linear in terms of vertices (V) and edges (E)`
+                };
+            case 'dijkstra':
+                return {
+                    complexity: 'O((V + E) log V)',
+                    explanation: "Dijkstra's algorithm detected - Complexity depends on graph implementation"
+                };
+            case 'fibonacci':
+                if (cleanCode.includes('recursion') || nestingStack.some(item => item.type === 'recursion')) {
+                    return {
+                        complexity: 'O(2ⁿ)',
+                        explanation: 'Recursive Fibonacci implementation detected - Exponential complexity'
+                    };
+                }
+        }
+    }
+  }
+
+  // Analyze based on nesting depth if no specific algorithm was detected
+  if (nestingStack.some(item => item.type === 'recursion')) {
+    baseComplexity = 'O(2ⁿ)';
+    explanation = 'Recursive function calls detected - Potentially exponential complexity';
+  } else {
+    switch (maxNesting) {
+        case 0:
+            baseComplexity = 'O(1)';
+            explanation = 'Constant time - No loops or recursion detected';
+            break;
+        case 1:
+            baseComplexity = 'O(n)';
+            explanation = 'Linear time - Single loop detected';
+            break;
+        case 2:
+            baseComplexity = 'O(n²)';
+            explanation = 'Quadratic time - Nested loops detected';
+            break;
+        case 3:
+            baseComplexity = 'O(n³)';
+            explanation = 'Cubic time - Triple nested loops detected';
+            break;
+        default:
+            baseComplexity = `O(n^${maxNesting})`;
+            explanation = `Polynomial time - ${maxNesting} levels of nested loops detected`;
+    }
+  }
+
+  // Add any additional complexity factors
+  if (cleanCode.includes('sort(')) {
+    additionalInfo.push('Built-in sorting operations are typically O(n log n)');
+  }
+
+  if (cleanCode.match(/Map|Set|Object|dict/)) {
+    additionalInfo.push('Hash table operations are generally O(1) for lookups');
+  }
+
   return {
-    complexity,
-    explanation
+    complexity: baseComplexity,
+    explanation: explanation + (additionalInfo.length ? '\nNote: ' + additionalInfo.join('. ') : '')
   };
 }
 
