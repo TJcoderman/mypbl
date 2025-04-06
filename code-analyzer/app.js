@@ -343,48 +343,34 @@ function debugPython(code) {
 function analyzeComplexity(code, language) {
   let complexity = "O(1)";
   let explanation = "No loops or recursive functions found.";
-
+  
   // Remove comments to simplify analysis
   const cleanCode = code.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '').replace(/#.*$/gm, '');
   
+  // Improved detection of loops and nesting
   let maxNesting = 0;
+  let currentNesting = 0;
+  const lines = cleanCode.split('\n');
+  lines.forEach(line => {
+    if (/\b(for|while)\b/.test(line)) {
+      // Increase nesting for detected loop line
+      currentNesting++;
+      maxNesting = Math.max(maxNesting, currentNesting);
+    }
+    // For C++/Java, assume closing brace reduces nesting
+    if ((language === 'cpp' || language === 'java') && line.includes('}')) {
+      currentNesting = Math.max(currentNesting - 1, 0);
+    }
+    // For Python, use indentation-based nesting level (assume 4 spaces per level)
+    if (language === 'python') {
+      const indentMatch = line.match(/^(\s+)/);
+      let indent = indentMatch ? indentMatch[1].length : 0;
+      let level = Math.floor(indent / 4);
+      maxNesting = Math.max(maxNesting, level);
+    }
+  });
   
-  if (language === 'python') {
-    // Use an indentation stack to determine nesting for Python
-    let indentStack = [];
-    const pyLines = cleanCode.split('\n');
-    pyLines.forEach(line => {
-      if (line.trim() === '') return;
-      const indentMatch = line.match(/^(\s*)/);
-      const indentSize = indentMatch ? indentMatch[1].length : 0;
-      const level = Math.floor(indentSize / 4);
-      // If the current line is more indented than the last, push a new level,
-      // else pop until the current indentation level is reached.
-      if (indentStack.length === 0 || level > indentStack[indentStack.length - 1]) {
-        indentStack.push(level);
-      } else {
-        while (indentStack.length > 0 && level < indentStack[indentStack.length - 1]) {
-          indentStack.pop();
-        }
-      }
-      maxNesting = Math.max(maxNesting, indentStack.length);
-    });
-  } else {
-    // For C++/Java, simply count loop lines and adjust with closing braces.
-    let currentNesting = 0;
-    const lines = cleanCode.split('\n');
-    lines.forEach(line => {
-      if (/\b(for|while)\b/.test(line)) {
-        currentNesting++;
-        maxNesting = Math.max(maxNesting, currentNesting);
-      }
-      if ((language === 'cpp' || language === 'java') && line.includes('}')) {
-        currentNesting = Math.max(currentNesting - 1, 0);
-      }
-    });
-  }
-  
-  // Check for recursion by finding function definitions and multiple calls.
+  // Check for recursion by identifying function definitions and multiple calls
   let recursionDetected = false;
   const functionNames = [];
   const functionRegex = /function\s+(\w+)|def\s+(\w+)/g;
@@ -398,6 +384,7 @@ function analyzeComplexity(code, language) {
   for (const fname of functionNames) {
     const callRegex = new RegExp('\\b' + fname + '\\s*\\(', 'g');
     const callCount = (cleanCode.match(callRegex) || []).length;
+    // Declaration counts as one call; more than one implies potential recursion
     if (callCount > 1) {
       recursionDetected = true;
       break;
@@ -408,6 +395,7 @@ function analyzeComplexity(code, language) {
     complexity = "O(2^n)";
     explanation = "Recursive function calls detected, which may lead to exponential complexity.";
   } else if (maxNesting > 0) {
+    // Determine complexity based on maximum nesting level
     switch (maxNesting) {
       case 1:
         complexity = "O(n)";
